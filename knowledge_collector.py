@@ -185,6 +185,24 @@ def fetch_page(url: str) -> str:
 class KnowledgeCollector:
     def __init__(self, knowledge_dir: str = "knowledge") -> None:
         self.root = Path(knowledge_dir)
+        self._index: object | None = None  # KnowledgeIndex, lazy loaded
+
+    def _get_index(self) -> object:
+        if self._index is None:
+            from embedding import KnowledgeIndex
+            self._index = KnowledgeIndex(str(self.root))
+            count = self._index.build()
+            if count > 0:
+                print(f"  向量索引已构建：{count} 个文本块")
+        return self._index
+
+    def search_semantic(self, query: str, limit: int = 3) -> list[dict]:
+        """Semantic search using Chroma vector index."""
+        try:
+            index = self._get_index()
+            return index.search(query, limit)  # type: ignore[union-attr]
+        except Exception:
+            return []
 
     def collect(self, topic: str, llm_summarize, max_pages: int = 3) -> str:
         """Collect knowledge on a topic: search -> fetch -> summarize -> save."""
@@ -218,6 +236,13 @@ class KnowledgeCollector:
         sources_block = "\n\n> 来源：\n> " + "\n> ".join(source_urls)
         content = header + summary + sources_block + "\n"
         filepath.write_text(content, encoding="utf-8")
+
+        # Rebuild vector index to include the new file
+        try:
+            if self._index is not None:
+                self._index.build(force=True)
+        except Exception:
+            pass
 
         return f"已保存到 {filepath}"
 

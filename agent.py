@@ -33,7 +33,7 @@ def main() -> None:
     agent = BigDataLearningAgent()
 
     llm_status = "已配置 LLM" if agent.llm.enabled else "本地规则模式（未配置 LLM）"
-    print(f"Big Data Learning Agent v0.2 — 知识库构建版")
+    print(f"Big Data Learning Agent v0.3 — 语义检索版")
     print(f"状态：{llm_status}")
     print(f"知识库文件数：{len(agent.knowledge.list_files())}")
     print("输入 :help 查看更多命令，输入 exit 或 quit 退出。\n")

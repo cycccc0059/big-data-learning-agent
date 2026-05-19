@@ -95,17 +95,34 @@ class BigDataLearningAgent:
     # ------------------------------------------------------------------
 
     def _retrieve_knowledge(self, question: str) -> tuple[str, list[str]]:
-        results = self.knowledge.search_local(question, limit=3)
-        if not results:
+        # Primary: semantic search via Chroma
+        semantic_results = self.knowledge.search_semantic(question, limit=5)
+        if semantic_results:
+            parts: list[str] = []
+            matched_files: list[str] = []
+            seen_files: set[str] = set()
+            for r in semantic_results:
+                fname = r["source"]
+                parts.append(
+                    f"### {fname} (相关度: {r['score']})\n"
+                    f"片段主题: {r['heading']}\n{r['content']}"
+                )
+                if fname not in seen_files:
+                    matched_files.append(fname)
+                    seen_files.add(fname)
+            return "\n\n".join(parts), matched_files[:3]
+
+        # Fallback: keyword search
+        fallback = self.knowledge.search_local(question, limit=3)
+        if not fallback:
             return "", []
 
-        parts: list[str] = []
-        matched_files: list[str] = []
-        for r in results:
+        parts = []
+        matched = []
+        for r in fallback:
             parts.append(f"### {r['file']}\n{r['content']}")
-            matched_files.append(r["file"])
-
-        return "\n\n".join(parts), matched_files
+            matched.append(r["file"])
+        return "\n\n".join(parts), matched
 
     # ------------------------------------------------------------------
     # Knowledge collection (called from CLI)

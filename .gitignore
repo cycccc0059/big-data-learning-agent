@@ -22,3 +22,9 @@ data/*.json
 .DS_Store
 .idea/
 .vscode/
+
+# Chroma vector index
+knowledge/.chroma/
+
+# Sentence-transformers model cache
+.model_cache/
