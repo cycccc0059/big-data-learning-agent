@@ -30,23 +30,35 @@ class BigDataLearningAgent:
 
     def answer(self, user_input: str) -> str:
         self.memory.add("user", user_input)
-
         response = self._build_response(user_input)
-
         self.memory.add("assistant", response)
         return response
 
     def _build_response(self, user_input: str) -> str:
         category = self._classify(user_input)
-        knowledge_context = self._retrieve_knowledge(user_input, category)
+        knowledge_context, matched_files = self._retrieve_knowledge(user_input)
         template = TEMPLATES.get(category, TEMPLATES["concept"])
         notes = self._load_notes()
 
         if self.llm.enabled:
-            return self._answer_with_llm(
+            response = self._answer_with_llm(
                 user_input, category, template, knowledge_context, notes
             )
-        return self._answer_locally(user_input, category, knowledge_context)
+        else:
+            response = self._answer_locally(user_input, category, knowledge_context)
+
+        if matched_files:
+            refs = "、".join(matched_files)
+            response += f"\n\n> 参考本地资料：{refs}"
+
+        if not matched_files and self.llm.enabled:
+            keywords = user_input.strip()[:40]
+            response += (
+                f"\n\n> 知识库中暂无「{keywords}」相关内容。"
+                f"输入 :collect {keywords} 来收集资料。"
+            )
+
+        return response
 
     # ------------------------------------------------------------------
     # Classification
@@ -63,15 +75,18 @@ class BigDataLearningAgent:
     # Knowledge retrieval
     # ------------------------------------------------------------------
 
-    def _retrieve_knowledge(self, question: str, category: str) -> str:
+    def _retrieve_knowledge(self, question: str) -> tuple[str, list[str]]:
         results = self.knowledge.search_local(question, limit=3)
         if not results:
-            return ""
+            return "", []
 
         parts: list[str] = []
+        matched_files: list[str] = []
         for r in results:
-            parts.append(f"### 本地资料: {r['file']}\n{r['content']}")
-        return "\n\n".join(parts)
+            parts.append(f"### {r['file']}\n{r['content']}")
+            matched_files.append(r["file"])
+
+        return "\n\n".join(parts), matched_files
 
     # ------------------------------------------------------------------
     # Knowledge collection (called from CLI)
@@ -107,7 +122,7 @@ class BigDataLearningAgent:
 
         instruction = (
             f"当前问题分类：{category}\n"
-            f"请参考以下结构组织你的回答，但不要照搬模板，而是填充具体内容：\n{template}"
+            f"请参考以下结构组织你的回答，填充具体内容：\n{template}"
         )
         messages.append({"role": "system", "content": instruction})
 
@@ -115,7 +130,7 @@ class BigDataLearningAgent:
             messages.append(
                 {
                     "role": "system",
-                    "content": f"以下是从本地知识库检索到的相关资料，请优先参考：\n\n{knowledge}",
+                    "content": f"以下是从本地知识库检索到的相关资料，请优先参考其中的内容：\n\n{knowledge}",
                 }
             )
 

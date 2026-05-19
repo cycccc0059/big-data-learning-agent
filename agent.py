@@ -3,10 +3,30 @@ from __future__ import annotations
 from agent_core import BigDataLearningAgent
 
 HELP_TEXT = """命令：
-  :collect <主题>   收集知识（搜索网络 + 整理到知识库）
-  :list             列出知识库中的所有文件
-  :help             显示此帮助
-  exit / quit       退出"""
+  :collect <主题1, 主题2, ...>   收集知识（支持逗号分隔多个主题）
+  :list                           列出知识库中的所有文件
+  :help                           显示此帮助
+  exit / quit                     退出"""
+
+
+def _handle_collect(agent: BigDataLearningAgent, raw: str) -> None:
+    """Handle :collect command, supporting comma-separated topics."""
+    topics_str = raw[len(":collect"):].strip()
+    if not topics_str:
+        print("\nAgent > 用法：:collect <主题>，例如 :collect Spark shuffle\n"
+              "Agent > 支持逗号分隔多个主题：:collect Spark RDD, Flink 状态后端\n")
+        return
+
+    topics = [t.strip() for t in topics_str.split(",") if t.strip()]
+    print()
+    for i, topic in enumerate(topics):
+        if len(topics) > 1:
+            print(f"[{i + 1}/{len(topics)}] ", end="")
+        result = agent.collect_knowledge(topic)
+        print(f"Agent > {result}")
+        if i < len(topics) - 1:
+            print()
+    print()
 
 
 def main() -> None:
@@ -28,13 +48,7 @@ def main() -> None:
 
         try:
             if user_input.startswith(":collect"):
-                topic = user_input[len(":collect"):].strip()
-                if not topic:
-                    print("\nAgent > 用法：:collect <主题>，例如 :collect Spark shuffle\n")
-                    continue
-                print()
-                result = agent.collect_knowledge(topic)
-                print(f"\nAgent > {result}\n")
+                _handle_collect(agent, user_input)
             elif user_input == ":list":
                 result = agent.list_knowledge()
                 print(f"\nAgent > {result}\n")
