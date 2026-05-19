@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from knowledge_collector import KnowledgeCollector
@@ -12,6 +13,12 @@ from prompts import (
     TEMPLATES,
     classify_question,
 )
+
+
+def _clean_response(text: str) -> str:
+    """Remove LLM-hallucinated reference lines. We add real references separately."""
+    text = re.sub(r"\n?> (?:参考|资料|来源|References?).*\n?", "", text)
+    return text.strip()
 
 NOTE_DIR = "notes"
 KNOWLEDGE_DIR = "knowledge"
@@ -40,6 +47,20 @@ class BigDataLearningAgent:
         template = TEMPLATES.get(category, TEMPLATES["concept"])
         notes = self._load_notes()
 
+        # Auto-collect when no local knowledge matches, or only passing mentions
+        should_collect = self.llm.enabled and self._should_auto_collect(
+            user_input, matched_files
+        )
+        if should_collect:
+            keywords = user_input.strip()[:60]
+            print(f"\n  知识库无匹配，正在自动收集「{keywords}」...")
+            try:
+                result = self.collect_knowledge(keywords)
+                print(f"  {result}")
+                knowledge_context, matched_files = self._retrieve_knowledge(user_input)
+            except Exception as exc:
+                print(f"  自动收集失败: {exc}")
+
         if self.llm.enabled:
             response = self._answer_with_llm(
                 user_input, category, template, knowledge_context, notes
@@ -50,12 +71,10 @@ class BigDataLearningAgent:
         if matched_files:
             refs = "、".join(matched_files)
             response += f"\n\n> 参考本地资料：{refs}"
-
-        if not matched_files and self.llm.enabled:
-            keywords = user_input.strip()[:40]
+        elif not self.llm.enabled:
             response += (
-                f"\n\n> 知识库中暂无「{keywords}」相关内容。"
-                f"输入 :collect {keywords} 来收集资料。"
+                "\n\n> 知识库中暂无相关内容。"
+                "配置 LLM 后可自动收集。参考 .env.example 文件。"
             )
 
         return response
@@ -91,6 +110,32 @@ class BigDataLearningAgent:
     # ------------------------------------------------------------------
     # Knowledge collection (called from CLI)
     # ------------------------------------------------------------------
+
+    def _should_auto_collect(
+        self, question: str, matched_files: list[str]
+    ) -> bool:
+        """Auto-collect if no matches, or matches are only passing mentions."""
+        if not matched_files:
+            return True
+
+        stop_words = {
+            "是什么", "怎么", "如何", "什么", "为什么", "哪个", "哪些",
+            "apache", "的", "了", "吗", "呢", "吧", "我", "想", "帮我",
+            "一个", "一下", "这个", "那个", "和", "与", "或", "在", "有",
+            "介绍", "解释", "说明",
+        }
+        keywords = [
+            kw for kw in question.lower().split()
+            if kw not in stop_words and len(kw) > 1
+        ]
+        if not keywords:
+            return False
+
+        for fname in matched_files:
+            for kw in keywords:
+                if kw in fname.lower():
+                    return False
+        return True
 
     def collect_knowledge(self, topic: str) -> str:
         if not self.llm.enabled:
@@ -146,7 +191,7 @@ class BigDataLearningAgent:
             messages.append({"role": item["role"], "content": item["content"]})
 
         messages.append({"role": "user", "content": user_input})
-        return self.llm.chat(messages)
+        return _clean_response(self.llm.chat(messages))
 
     # ------------------------------------------------------------------
     # Local (no LLM) path

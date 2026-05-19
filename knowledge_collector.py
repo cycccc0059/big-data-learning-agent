@@ -37,49 +37,59 @@ def _extract_text(html: str) -> str:
     return raw
 
 
+# ------------------------------------------------------------------
+# Official documentation sites for big data components
+# ------------------------------------------------------------------
+
+OFFICIAL_SITES: dict[str, list[str]] = {
+    "spark": ["spark.apache.org"],
+    "flink": ["nightlies.apache.org/flink", "flink.apache.org"],
+    "hive": ["hive.apache.org", "cwiki.apache.org/confluence/display/Hive"],
+    "kafka": ["kafka.apache.org"],
+    "hadoop": ["hadoop.apache.org"],
+    "hdfs": ["hadoop.apache.org"],
+    "yarn": ["hadoop.apache.org"],
+    "zookeeper": ["zookeeper.apache.org"],
+    "hbase": ["hbase.apache.org"],
+    "iceberg": ["iceberg.apache.org"],
+    "hudi": ["hudi.apache.org"],
+    "dolphinscheduler": ["dolphinscheduler.apache.org"],
+    "airflow": ["airflow.apache.org"],
+}
+
+
+def _detect_component(topic: str) -> str | None:
+    """Detect which big data component a topic relates to."""
+    topic_lower = topic.lower()
+    for comp in OFFICIAL_SITES:
+        if comp in topic_lower:
+            return comp
+    return None
+
+
+# ------------------------------------------------------------------
+# Topic to directory mapping
+# ------------------------------------------------------------------
+
 TOPIC_TO_DIR: dict[str, str] = {
-    "hadoop": "components",
-    "hdfs": "components",
-    "yarn": "components",
-    "mapreduce": "components",
-    "spark": "components",
-    "spark sql": "components",
-    "spark streaming": "components",
-    "flink": "components",
-    "flink sql": "components",
-    "checkpoint": "components",
-    "hive": "components",
-    "hive sql": "components",
-    "kafka": "components",
-    "zookeeper": "components",
-    "hbase": "components",
-    "presto": "components",
-    "clickhouse": "components",
-    "doris": "components",
-    "数仓": "projects",
-    "数据仓库": "projects",
-    "离线数仓": "projects",
-    "实时数仓": "projects",
-    "数据治理": "projects",
-    "数据质量": "projects",
-    "血缘": "projects",
-    "调度": "projects",
-    "airflow": "projects",
-    "dolphinscheduler": "projects",
-    "面试": "interview",
-    "面试题": "interview",
-    "学习路线": "roadmap",
-    "学习路径": "roadmap",
-    "入门": "roadmap",
-    "排查": "cases",
-    "优化": "cases",
-    "倾斜": "cases",
-    "OOM": "cases",
+    "hadoop": "components", "hdfs": "components", "yarn": "components",
+    "mapreduce": "components", "spark": "components", "spark sql": "components",
+    "spark streaming": "components", "flink": "components", "flink sql": "components",
+    "checkpoint": "components", "hive": "components", "hive sql": "components",
+    "kafka": "components", "zookeeper": "components", "hbase": "components",
+    "presto": "components", "clickhouse": "components", "doris": "components",
+    "iceberg": "components", "hudi": "components",
+    "数仓": "projects", "数据仓库": "projects", "离线数仓": "projects",
+    "实时数仓": "projects", "数据治理": "projects", "数据质量": "projects",
+    "血缘": "projects", "调度": "projects",
+    "airflow": "projects", "dolphinscheduler": "projects",
+    "面试": "interview", "面试题": "interview",
+    "学习路线": "roadmap", "学习路径": "roadmap", "入门": "roadmap",
+    "排查": "cases", "优化": "cases", "倾斜": "cases", "OOM": "cases",
 }
 
 
 def _topic_to_dir(topic: str) -> tuple[str, str]:
-    """Determine directory and filename for a topic. Returns (dir_name, file_name)."""
     topic_lower = topic.lower()
     for key, dir_name in TOPIC_TO_DIR.items():
         if key in topic_lower:
@@ -88,29 +98,61 @@ def _topic_to_dir(topic: str) -> tuple[str, str]:
     return "components", "general.md"
 
 
+# ------------------------------------------------------------------
+# Web search
+# ------------------------------------------------------------------
+
 def search_web(query: str, max_results: int = 5) -> list[dict[str, str]]:
-    """Search DuckDuckGo and return list of {title, href, body}."""
+    """Search DuckDuckGo, preferring official docs when possible. Returns list of {title, href, body}."""
     try:
         from ddgs import DDGS
     except ImportError:
         try:
             from duckduckgo_search import DDGS  # 旧版兼容
         except ImportError:
-            raise ImportError(
-                "需要安装 ddgs 库: pip install ddgs"
-            )
+            raise ImportError("需要安装 ddgs 库: pip install ddgs")
 
     results: list[dict[str, str]] = []
+    seen_urls: set[str] = set()
+
     with DDGS() as ddgs:
-        for r in ddgs.text(query, max_results=max_results):
-            results.append(
-                {
-                    "title": r.get("title", ""),
-                    "href": r.get("href", ""),
-                    "body": r.get("body", ""),
-                }
-            )
-    return results
+        # Try official site search first
+        component = _detect_component(query)
+        if component:
+            for site in OFFICIAL_SITES.get(component, []):
+                site_query = f"site:{site} {query}"
+                try:
+                    for r in ddgs.text(site_query, max_results=2):
+                        url = r.get("href", "")
+                        if url not in seen_urls:
+                            seen_urls.add(url)
+                            results.append({
+                                "title": r.get("title", ""),
+                                "href": url,
+                                "body": r.get("body", ""),
+                            })
+                except Exception:
+                    continue
+
+        # Fill remaining slots with general search
+        remaining = max_results - len(results)
+        if remaining > 0:
+            try:
+                for r in ddgs.text(query, max_results=remaining * 2):
+                    url = r.get("href", "")
+                    if url not in seen_urls:
+                        seen_urls.add(url)
+                        results.append({
+                            "title": r.get("title", ""),
+                            "href": url,
+                            "body": r.get("body", ""),
+                        })
+                        if len(results) >= max_results:
+                            break
+            except Exception:
+                pass
+
+    return results[:max_results]
 
 
 def fetch_page(url: str) -> str:
@@ -123,21 +165,22 @@ def fetch_page(url: str) -> str:
         with urllib.request.urlopen(req, timeout=30) as resp:
             content_type = resp.headers.get("Content-Type", "")
             raw = resp.read()
-
             if "charset=" in content_type:
                 charset = content_type.split("charset=")[-1].strip()
             else:
                 charset = "utf-8"
-
             try:
                 html = raw.decode(charset, errors="replace")
             except (LookupError, UnicodeDecodeError):
                 html = raw.decode("utf-8", errors="replace")
-
             return _extract_text(html)
     except Exception as exc:
         return f"[无法抓取此页面: {exc}]"
 
+
+# ------------------------------------------------------------------
+# KnowledgeCollector
+# ------------------------------------------------------------------
 
 class KnowledgeCollector:
     def __init__(self, knowledge_dir: str = "knowledge") -> None:
@@ -152,11 +195,14 @@ class KnowledgeCollector:
 
         print(f"  找到 {len(search_results)} 个结果，正在抓取页面内容...")
         raw_texts: list[str] = []
+        source_urls: list[str] = []
         for r in search_results:
             url = r["href"]
+            title = r["title"]
             print(f"    -> {url[:80]}...")
             text = fetch_page(url)
-            raw_texts.append(f"来源: {r['title']} ({url})\n{text[:3000]}")
+            raw_texts.append(f"来源: {title} ({url})\n{text[:3000]}")
+            source_urls.append(f"- [{title}]({url})")
             time.sleep(1)
 
         combined = "\n\n---\n\n".join(raw_texts)
@@ -169,7 +215,8 @@ class KnowledgeCollector:
         filepath = target_dir / filename
 
         header = f"# {topic}\n\n> 由知识收集器自动生成。\n\n"
-        content = header + summary + "\n"
+        sources_block = "\n\n> 来源：\n> " + "\n> ".join(source_urls)
+        content = header + summary + sources_block + "\n"
         filepath.write_text(content, encoding="utf-8")
 
         return f"已保存到 {filepath}"
@@ -190,7 +237,16 @@ class KnowledgeCollector:
             return []
 
         results: list[dict[str, str]] = []
-        keywords = query.lower().split()
+        stop_words = {
+            "是什么", "怎么", "如何", "什么", "为什么", "哪个", "哪些",
+            "apache", "的", "了", "吗", "呢", "吧", "我", "想", "帮我",
+            "一个", "一下", "这个", "那个", "和", "与", "或", "在", "有",
+            "介绍", "解释", "说明",
+        }
+        keywords = [
+            kw for kw in query.lower().split()
+            if kw not in stop_words and len(kw) > 1
+        ]
 
         for path in sorted(self.root.rglob("*.md")):
             try:
@@ -202,13 +258,12 @@ class KnowledgeCollector:
             if score > 0:
                 rel = str(path.relative_to(self.root))
                 full = path.read_text(encoding="utf-8")
-                results.append(
-                    {
-                        "file": rel,
-                        "score": str(score),
-                        "content": full[:2000],
-                    }
-                )
+                results.append({
+                    "file": rel,
+                    "score": str(score),
+                    "content": full[:2000],
+                })
 
         results.sort(key=lambda x: int(x["score"]), reverse=True)
-        return results[:limit]
+        # Require score >= 1; stop words already handle broad matches
+        return [r for r in results[:limit] if int(r["score"]) >= 1]
