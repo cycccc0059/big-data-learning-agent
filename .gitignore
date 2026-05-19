@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Local config and secrets
+.env
+.env.*
+!.env.example
+
+# Runtime data
+data/*.json
+
+# OS/editor files
+.DS_Store
+.idea/
+.vscode/
