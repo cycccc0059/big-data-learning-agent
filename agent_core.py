@@ -43,21 +43,22 @@ class BigDataLearningAgent:
 
     def _build_response(self, user_input: str) -> str:
         category = self._classify(user_input)
-        knowledge_context, matched_files = self._retrieve_knowledge(user_input)
+        # Extract core topic for better search precision
+        search_query = self._extract_topic(user_input)
+        knowledge_context, matched_files = self._retrieve_knowledge(search_query)
         template = TEMPLATES.get(category, TEMPLATES["concept"])
         notes = self._load_notes()
 
         # Auto-collect when no local knowledge matches, or only passing mentions
         should_collect = self.llm.enabled and self._should_auto_collect(
-            user_input, matched_files
+            search_query, matched_files
         )
         if should_collect:
-            keywords = user_input.strip()[:60]
-            print(f"\n  知识库无匹配，正在自动收集「{keywords}」...")
+            print(f"\n  知识库无匹配，正在自动收集「{search_query}」...")
             try:
-                result = self.collect_knowledge(keywords)
+                result = self.collect_knowledge(search_query)
                 print(f"  {result}")
-                knowledge_context, matched_files = self._retrieve_knowledge(user_input)
+                knowledge_context, matched_files = self._retrieve_knowledge(search_query)
             except Exception as exc:
                 print(f"  自动收集失败: {exc}")
 
@@ -89,6 +90,34 @@ class BigDataLearningAgent:
             if llm_result in CLASSIFY_RULES:
                 return llm_result
         return classify_question(question)
+
+    # ------------------------------------------------------------------
+    # Topic extraction
+    # ------------------------------------------------------------------
+
+    def _extract_topic(self, question: str) -> str:
+        """Extract core topic keywords for better search precision."""
+        if self.llm.enabled:
+            topic = self.llm.extract_topic(question)
+            if topic and len(topic) >= 2:
+                return topic
+
+        # Fallback: stop word filtering for Chinese/English mixed queries
+        stop_words = {
+            "是什么", "怎么", "如何", "什么", "为什么", "哪个", "哪些",
+            "apache", "的", "了", "吗", "呢", "吧", "我", "想", "帮我",
+            "一个", "一下", "这个", "那个", "和", "与", "或", "在", "有",
+            "介绍", "解释", "说明", "处理", "问题", "遇到", "哪些", "进行",
+            "详细", "列出", "尽可能", "方案", "解决",
+        }
+        words = question.lower().split()
+        keywords = [
+            w for w in words
+            if w not in stop_words and len(w) > 1
+        ]
+        # Take longest 5 keywords
+        keywords.sort(key=len, reverse=True)
+        return " ".join(keywords[:5]) or question.strip()[:40]
 
     # ------------------------------------------------------------------
     # Knowledge retrieval

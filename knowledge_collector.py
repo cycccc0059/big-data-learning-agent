@@ -91,11 +91,12 @@ TOPIC_TO_DIR: dict[str, str] = {
 
 def _topic_to_dir(topic: str) -> tuple[str, str]:
     topic_lower = topic.lower()
+    safe_name = re.sub(r"[^\w一-鿿\-]", "_", topic.strip()).strip("_") or "untitled"
     for key, dir_name in TOPIC_TO_DIR.items():
         if key in topic_lower:
-            safe_name = re.sub(r"[^\w一-鿿\-]", "_", topic.strip()).strip("_")
             return dir_name, f"{safe_name}.md"
-    return "components", "general.md"
+    # No category matched — use topic name as filename, put in components
+    return "components", f"{safe_name}.md"
 
 
 # ------------------------------------------------------------------

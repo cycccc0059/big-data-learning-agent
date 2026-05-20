@@ -57,6 +57,22 @@ class LLMClient:
         except Exception:
             return "concept"
 
+    def extract_topic(self, question: str) -> str:
+        """Extract core topic keywords from a user question."""
+        if not self.enabled:
+            return question.strip()[:40]
+        prompt = (
+            "从以下用户问题中提取核心主题关键词（3-5个词，空格分隔），只回复关键词，不要解释。\n\n"
+            f"问题：{question}\n\n关键词："
+        )
+        try:
+            result = self._request(
+                [{"role": "user", "content": prompt}], temperature=0.1
+            )
+            return result.strip()[:80]
+        except Exception:
+            return question.strip()[:40]
+
     def summarize_knowledge(self, title: str, raw_text: str) -> str:
         """Summarize web content into structured Markdown knowledge."""
         if not self.enabled:
@@ -65,10 +81,17 @@ class LLMClient:
             f"你是一位大数据技术文档撰写者。请将以下关于「{title}」的网页内容整理成一份结构化的"
             f"Markdown 笔记，包含以下部分：\n"
             f"1. 核心概念\n2. 关键机制\n3. 常见问题与优化\n4. 学习建议\n\n"
-            f"要求：只输出 Markdown 内容，语言简洁专业，面向有一定基础的大数据学习者。\n\n"
+            f"要求：只输出纯 Markdown 内容，不要用代码块包裹，语言简洁专业。\n\n"
             f"原始内容：\n{raw_text[:8000]}"
         )
-        return self._request([{"role": "user", "content": prompt}], temperature=0.3)
+        result = self._request([{"role": "user", "content": prompt}], temperature=0.3)
+        # Strip code block wrappers if present
+        result = result.strip()
+        if result.startswith("```"):
+            lines = result.split("\n")
+            if len(lines) > 2:
+                result = "\n".join(lines[1:-1])
+        return result.strip()
 
     def _request(self, messages: list[dict[str, str]], temperature: float) -> str:
         payload = {
